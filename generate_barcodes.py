@@ -24,7 +24,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # Set the numberof core for parallelization
 num_cores = 8
 # Set the size of the possible barcode population
-num_sequences = 2000
+num_sequences = 10000
 # Set barcode sequence length
 length = 300
 # Define the window size for the secondary structure search
@@ -366,7 +366,7 @@ if __name__ == "__main__":
     # Store the ranked pairs
     ranked_pairs = []
     
-    for pair in barcode_pairs:
+    for pair in tqdm(barcode_pairs, desc="Ranking barcodes"):
         barcode1, barcode2 = pair
         barcode1_data = FINAL_barcodes.loc[FINAL_barcodes['barcode_name'] == barcode1].iloc[0]
         barcode2_data = FINAL_barcodes.loc[FINAL_barcodes['barcode_name'] == barcode2].iloc[0]
@@ -376,23 +376,34 @@ if __name__ == "__main__":
     
         # Define the ranking criteria
         rank_criteria = [
-            ('max_MFE', 'asc'),
-            ('average_MFE', 'asc'),
+            ('max_MFE', 'desc'),
+            ('average_MFE', 'desc'),
             ('Alignment Length', 'asc'),
             ('Percent Identity', 'asc'),
             ('Query Coverage', 'asc')
         ]
+        
+        weights = {
+            'max_MFE': 4,
+            'average_MFE': 4,
+            'Alignment Length': 3,
+            'Percent Identity': 2,
+            'Query Coverage': 1
+        }
+
     
         # Calculate ranks for each criteria
         ranks = []
+        total_weight = sum(weights.values())
         for column, order in rank_criteria:
             sorted_df = FINAL_barcodes.sort_values(column, ascending=(order == 'asc'))
-            rank1 = sorted_df.index.get_loc(sorted_df[sorted_df['barcode_name'] == barcode1].index[0])
-            rank2 = sorted_df.index.get_loc(sorted_df[sorted_df['barcode_name'] == barcode2].index[0])
-            ranks.append((rank1 + rank2) / 2)
-    
-        # Average the ranks
-        avg_rank = sum(ranks) / len(ranks)
+            rank1 = sorted_df[sorted_df['barcode_name'] == barcode1][column].rank(method='min').values[0]
+            rank2 = sorted_df[sorted_df['barcode_name'] == barcode2][column].rank(method='min').values[0]
+            ranks.append(((rank1 + rank2) / 2) * weights[column])
+        
+        # Average the ranks (weighted)
+        avg_rank = sum(ranks) / total_weight
+
     
         # Store the ranked pairs
         ranked_pairs.append((barcode1_data, barcode2_data, avg_rank, distance))
@@ -429,6 +440,9 @@ if __name__ == "__main__":
     
     # Save ranked_pairs_df as a csv file
     ranked_pairs_df.to_csv('ranked_barcode_pairs.csv', index=False)
+    
+    print(f"Ranking of the best barcode pairs written to {script_directory}ranked_barcode_pairs.csv")
+    print("Barcode generation complete.")
 
 
 
